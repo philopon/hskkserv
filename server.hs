@@ -42,12 +42,15 @@ instance Exception Timeout
 data Options = Options { optJisyo :: FilePath
                        , optPort  :: Word16
                        , optCode  :: String
+                       , optPlist :: Bool
                        }
 
 main :: IO ()
 main = do
     homef <- maybe id (\f -> (f </>)) <$> lookupEnv "HOME"
-    execParser (opts homef) >>= \case Options{..} -> doAction optJisyo optPort optCode
+    execParser (opts homef) >>= \case
+        Options{optPlist = True} -> writePlist
+        Options{..} -> doAction optJisyo optPort optCode
   where
     opts homef = info (helper <*> options homef) fullDesc
     defOpts s  = long (map toLower s) <> short (head s) <> metavar (map toUpper s)
@@ -55,6 +58,7 @@ main = do
         <$> strOption (defOpts "file" <> value (homef ".dict.sqlite3") <> help "dict file" <> showDefaultWith id)
         <*> option    (defOpts "port" <> value 1178 <> help "port" <> showDefault)
         <*> strOption (defOpts "code" <> value "EUC-JP" <> help "charcode" <> showDefaultWith id)
+        <*> switch    (long   "plist" <> help "write plist of launchd")
 
 doAction :: FilePath -> Word16 -> String -> IO ()
 doAction jisyo usePort charCode =
@@ -129,3 +133,36 @@ timeout t def f = do
     timer <- forkIO . void $ threadDelay t >> tryPutMVar mv def
     f >>= tryPutMVar mv >> killThread timer
     readMVar mv
+
+writePlist :: IO ()
+writePlist = do
+    e      <- getExecutablePath
+    Just h <- lookupEnv "HOME"
+    let p = h </> "Library/LaunchAgents/com.dizzy-life.hskkenv.plist"
+    writeFile p (macPlist e)
+    putStrLn $ "launchctl load " ++ p
+
+macPlist :: FilePath -> String
+macPlist prog = unlines
+    [ "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    , "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">"
+    , "<plist version=\"1.0\">"
+    , "<dict>"
+    , "  <key>KeepAlive</key>"
+    , "  <true/>"
+    , "  <key>Label</key>"
+    , "  <string>com.dizzy-life.hskkserv</string>"
+    , "  <key>ProgramArguments</key>"
+    , "  <array>"
+    , "    <string>" ++ prog ++ "</string>"
+    , "  </array>"
+    , "  <key>RunAtLoad</key>"
+    , "  <true/>"
+    , "  <key>WorkingDirectory</key>"
+    , "  <string>/usr/local</string>"
+    , "  <key>StandardErrorPath</key>"
+    , "  <string>/usr/local/var/postgres/server.log</string>"
+    , "</dict>"
+    , "</plist>"
+    ]
+
