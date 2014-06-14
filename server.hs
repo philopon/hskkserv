@@ -69,7 +69,7 @@ doAction jisyo usePort charCode =
         icu <- ICU.open charCode Nothing
         forever ( do
             mbmsg <- recv sock 10240
-            maybe (return ()) (talk icu mgr conn sock . toKey icu) mbmsg
+            maybe (throwIO End) (talk icu mgr conn sock . toKey icu) mbmsg
                 `catches` (handler icu sock mbmsg)
             ) `catch` (\End -> return ())
   where
